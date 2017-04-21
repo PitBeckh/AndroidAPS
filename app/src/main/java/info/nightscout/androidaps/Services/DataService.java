@@ -6,7 +6,6 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.provider.Telephony;
-import android.support.annotation.Nullable;
 
 import com.j256.ormlite.dao.Dao;
 import com.j256.ormlite.stmt.PreparedQuery;
@@ -33,7 +32,6 @@ import info.nightscout.androidaps.db.TempTarget;
 import info.nightscout.androidaps.db.Treatment;
 import info.nightscout.androidaps.events.EventNewBG;
 import info.nightscout.androidaps.events.EventNewBasalProfile;
-import info.nightscout.androidaps.events.EventTreatmentChange;
 import info.nightscout.androidaps.interfaces.PluginBase;
 import info.nightscout.androidaps.interfaces.PumpInterface;
 import info.nightscout.androidaps.plugins.ConfigBuilder.ConfigBuilderPlugin;
@@ -46,14 +44,14 @@ import info.nightscout.androidaps.plugins.Overview.events.EventDismissNotificati
 import info.nightscout.androidaps.plugins.Overview.events.EventNewNotification;
 import info.nightscout.androidaps.plugins.SmsCommunicator.SmsCommunicatorPlugin;
 import info.nightscout.androidaps.plugins.SmsCommunicator.events.EventNewSMS;
+import info.nightscout.androidaps.plugins.SourceGlimp.SourceGlimpPlugin;
 import info.nightscout.androidaps.plugins.SourceMM640g.SourceMM640gPlugin;
 import info.nightscout.androidaps.plugins.SourceNSClient.SourceNSClientPlugin;
 import info.nightscout.androidaps.plugins.SourceXdrip.SourceXdripPlugin;
 import info.nightscout.androidaps.plugins.TempTargetRange.events.EventTempTargetRangeChange;
 import info.nightscout.androidaps.receivers.DataReceiver;
-import info.nightscout.client.data.NSProfile;
-import info.nightscout.client.data.NSSgv;
-import info.nightscout.utils.ToastUtils;
+import info.nightscout.androidaps.plugins.NSClientInternal.data.NSProfile;
+import info.nightscout.androidaps.plugins.NSClientInternal.data.NSSgv;
 
 
 public class DataService extends IntentService {
@@ -62,6 +60,7 @@ public class DataService extends IntentService {
     boolean xDripEnabled = false;
     boolean nsClientEnabled = true;
     boolean mm640gEnabled = false;
+    boolean glimpEnabled = false;
 
     public DataService() {
         super("DataService");
@@ -77,14 +76,22 @@ public class DataService extends IntentService {
             xDripEnabled = true;
             nsClientEnabled = false;
             mm640gEnabled = false;
+            glimpEnabled = false;
         } else if (ConfigBuilderPlugin.getActiveBgSource().getClass().equals(SourceNSClientPlugin.class)) {
             xDripEnabled = false;
             nsClientEnabled = true;
             mm640gEnabled = false;
+            glimpEnabled = false;
         } else if (ConfigBuilderPlugin.getActiveBgSource().getClass().equals(SourceMM640gPlugin.class)) {
             xDripEnabled = false;
             nsClientEnabled = false;
             mm640gEnabled = true;
+            glimpEnabled = false;
+        } else if (ConfigBuilderPlugin.getActiveBgSource().getClass().equals(SourceGlimpPlugin.class)) {
+            xDripEnabled = false;
+            nsClientEnabled = false;
+            mm640gEnabled = false;
+            glimpEnabled = true;
         }
 
         boolean isNSProfile = ConfigBuilderPlugin.getActiveProfile().getClass().equals(NSProfilePlugin.class);
@@ -101,6 +108,10 @@ public class DataService extends IntentService {
             } else if (Intents.NS_EMULATOR.equals(action)) {
                 if (mm640gEnabled) {
                     handleNewDataFromMM640g(intent);
+                }
+            } else if (Intents.GLIMP_BG.equals(action)) {
+                if (glimpEnabled) {
+                    handleNewDataFromGlimp(intent);
                 }
             } else if (Intents.ACTION_NEW_SGV.equals(action)) {
                 // always handle SGV if NS-Client is the source
@@ -179,6 +190,30 @@ public class DataService extends IntentService {
 
         if (Config.logIncommingBG)
             log.debug("XDRIPREC BG " + bgReading.toString());
+
+        try {
+            MainApp.getDbHelper().getDaoBgReadings().createIfNotExists(bgReading);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        MainApp.bus().post(new EventNewBG());
+    }
+
+    private void handleNewDataFromGlimp(Intent intent) {
+        Bundle bundle = intent.getExtras();
+        if (bundle == null) return;
+
+        BgReading bgReading = new BgReading();
+
+        bgReading.value = bundle.getDouble("mySGV");
+        bgReading.direction = bundle.getString("myTrend");
+        bgReading.battery_level = bundle.getInt("myBatLvl");
+        bgReading.timeIndex = bundle.getLong("myTimestamp");
+        bgReading.raw = 0;
+
+        if (Config.logIncommingBG)
+            log.debug(bundle.toString());
+            log.debug("GLIMP BG " + bgReading.toString());
 
         try {
             MainApp.getDbHelper().getDaoBgReadings().createIfNotExists(bgReading);
@@ -388,7 +423,7 @@ public class DataService extends IntentService {
                     String trstring = bundles.getString("treatment");
                     JSONObject trJson = new JSONObject(trstring);
                     String _id = trJson.getString("_id");
-                    removeTreatmentFromDb(_id);
+                    MainApp.getDbHelper().delete(_id);
                     handleRemoveTempTargetRecord(trJson);
                 }
 
@@ -398,7 +433,7 @@ public class DataService extends IntentService {
                     for (int i = 0; i < jsonArray.length(); i++) {
                         JSONObject trJson = jsonArray.getJSONObject(i);
                         String _id = trJson.getString("_id");
-                        removeTreatmentFromDb(_id);
+                        MainApp.getDbHelper().delete(_id);
                         handleRemoveTempTargetRecord(trJson);
                     }
                 }
@@ -468,9 +503,9 @@ public class DataService extends IntentService {
         if (trJson.has("timeIndex")) {
             if (Config.logIncommingData)
                 log.debug("ADD: timeIndex found: " + trstring);
-            stored = findByTimeIndex(trJson.getLong("timeIndex"));
+            stored = MainApp.getDbHelper().findTreatmentByTimeIndex(trJson.getLong("timeIndex"));
         } else {
-            stored = findById(_id);
+            stored = MainApp.getDbHelper().findTreatmentById(_id);
         }
 
         if (stored != null) {
@@ -478,10 +513,9 @@ public class DataService extends IntentService {
                 log.debug("ADD: Existing treatment: " + trstring);
             if (trJson.has("timeIndex")) {
                 stored._id = _id;
-                int updated = MainApp.getDbHelper().getDaoTreatments().update(stored);
+                int updated = MainApp.getDbHelper().update(stored);
                 if (Config.logIncommingData)
                     log.debug("Records updated: " + updated);
-                scheduleTreatmentChange();
             }
         } else {
             if (Config.logIncommingData)
@@ -506,14 +540,9 @@ public class DataService extends IntentService {
                     treatment.mealBolus = false;
             }
             treatment.setTimeIndex(treatment.getTimeIndex());
-            try {
-                MainApp.getDbHelper().getDaoTreatments().createOrUpdate(treatment);
-                if (Config.logIncommingData)
-                    log.debug("ADD: Stored treatment: " + treatment.log());
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
-            scheduleTreatmentChange();
+            MainApp.getDbHelper().createOrUpdate(treatment);
+            if (Config.logIncommingData)
+                log.debug("ADD: Stored treatment: " + treatment.log());
         }
     }
 
@@ -533,15 +562,15 @@ public class DataService extends IntentService {
         if (trJson.has("timeIndex")) {
             if (Config.logIncommingData)
                 log.debug("ADD: timeIndex found: " + trstring);
-            stored = findByTimeIndex(trJson.getLong("timeIndex"));
+            stored = MainApp.getDbHelper().findTreatmentByTimeIndex(trJson.getLong("timeIndex"));
         } else {
-            stored = findById(_id);
+            stored = MainApp.getDbHelper().findTreatmentById(_id);
         }
 
         if (stored != null) {
             if (Config.logIncommingData)
                 log.debug("CHANGE: Removing old: " + trstring);
-            removeTreatmentFromDb(_id);
+            MainApp.getDbHelper().delete(_id);
         }
 
         if (Config.logIncommingData)
@@ -567,16 +596,11 @@ public class DataService extends IntentService {
                 treatment.mealBolus = false;
         }
         treatment.setTimeIndex(treatment.getTimeIndex());
-        try {
-            Dao.CreateOrUpdateStatus status = MainApp.getDbHelper().getDaoTreatments().createOrUpdate(treatment);
-            if (Config.logIncommingData)
-                log.debug("Records updated: " + status.getNumLinesChanged());
-            if (Config.logIncommingData)
-                log.debug("CHANGE: Stored treatment: " + treatment.log());
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        scheduleTreatmentChange();
+        Dao.CreateOrUpdateStatus status = MainApp.getDbHelper().createOrUpdate(treatment);
+        if (Config.logIncommingData)
+            log.debug("Records updated: " + status.getNumLinesChanged());
+        if (Config.logIncommingData)
+            log.debug("CHANGE: Stored treatment: " + treatment.log());
     }
 
     public void handleDanaRHistoryRecords(JSONObject trJson) throws JSONException, SQLException {
@@ -683,75 +707,10 @@ public class DataService extends IntentService {
         }
     }
 
-    @Nullable
-    public static Treatment findById(String _id) {
-        try {
-            Dao<Treatment, Long> daoTreatments = MainApp.getDbHelper().getDaoTreatments();
-            QueryBuilder<Treatment, Long> queryBuilder = daoTreatments.queryBuilder();
-            Where where = queryBuilder.where();
-            where.eq("_id", _id);
-            queryBuilder.limit(10);
-            PreparedQuery<Treatment> preparedQuery = queryBuilder.prepare();
-            List<Treatment> trList = daoTreatments.query(preparedQuery);
-            if (trList.size() != 1) {
-                //log.debug("Treatment findById query size: " + trList.size());
-                return null;
-            } else {
-                //log.debug("Treatment findById found: " + trList.get(0).log());
-                return trList.get(0);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-
-    @Nullable
-    public static Treatment findByTimeIndex(Long timeIndex) {
-        try {
-            QueryBuilder<Treatment, String> qb = null;
-            Dao<Treatment, Long> daoTreatments = MainApp.getDbHelper().getDaoTreatments();
-            QueryBuilder<Treatment, Long> queryBuilder = daoTreatments.queryBuilder();
-            Where where = queryBuilder.where();
-            where.eq("timeIndex", timeIndex);
-            queryBuilder.limit(10);
-            PreparedQuery<Treatment> preparedQuery = queryBuilder.prepare();
-            List<Treatment> trList = daoTreatments.query(preparedQuery);
-            if (trList.size() != 1) {
-                log.debug("Treatment findByTimeIndex query size: " + trList.size());
-                return null;
-            } else {
-                log.debug("Treatment findByTimeIndex found: " + trList.get(0).log());
-                return trList.get(0);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-
-    private void removeTreatmentFromDb(String _id) throws SQLException {
-        Treatment stored = findById(_id);
-        if (stored != null) {
-            log.debug("REMOVE: Existing treatment (removing): " + _id);
-            int removed = MainApp.getDbHelper().getDaoTreatments().delete(stored);
-            if (Config.logIncommingData)
-                log.debug("Records removed: " + removed);
-            scheduleTreatmentChange();
-        } else {
-            log.debug("REMOVE: Not stored treatment (ignoring): " + _id);
-        }
-    }
-
     private void handleNewSMS(Intent intent) {
         Bundle bundle = intent.getExtras();
         if (bundle == null) return;
         MainApp.bus().post(new EventNewSMS(bundle));
     }
-
-    public void scheduleTreatmentChange() {
-        MainApp.bus().post(new EventTreatmentChange());
-    }
-
 
 }

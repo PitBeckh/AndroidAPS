@@ -7,7 +7,6 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.SQLException;
 import java.util.Date;
 
 import info.nightscout.androidaps.BuildConfig;
@@ -19,10 +18,7 @@ import info.nightscout.androidaps.db.TempBasal;
 import info.nightscout.androidaps.interfaces.PluginBase;
 import info.nightscout.androidaps.interfaces.PumpDescription;
 import info.nightscout.androidaps.interfaces.PumpInterface;
-import info.nightscout.androidaps.plugins.Overview.events.EventOverviewBolusProgress;
-import info.nightscout.androidaps.plugins.VirtualPump.VirtualPumpFragment;
-import info.nightscout.androidaps.plugins.VirtualPump.events.EventVirtualPumpUpdateGui;
-import info.nightscout.client.data.NSProfile;
+import info.nightscout.androidaps.plugins.NSClientInternal.data.NSProfile;
 import info.nightscout.utils.DateUtil;
 
 /**
@@ -116,6 +112,16 @@ public class MDIPlugin implements PluginBase, PumpInterface {
     }
 
     @Override
+    public boolean isSuspended() {
+        return false;
+    }
+
+    @Override
+    public boolean isBusy() {
+        return false;
+    }
+
+    @Override
     public boolean isTempBasalInProgress() {
         return false;
     }
@@ -134,6 +140,16 @@ public class MDIPlugin implements PluginBase, PumpInterface {
     @Override
     public boolean isThisProfileSet(NSProfile profile) {
         return false;
+    }
+
+    @Override
+    public Date lastDataTime() {
+        return new Date();
+    }
+
+    @Override
+    public void refreshDataFromPump(String reason) {
+        // do nothing
     }
 
     @Override
@@ -260,6 +276,11 @@ public class MDIPlugin implements PluginBase, PumpInterface {
     @Override
     public PumpDescription getPumpDescription() {
         return pumpDescription;
+    }
+
+    @Override
+    public String shortStatus(boolean veryShort) {
+        return deviceID();
     }
 
 }

@@ -16,16 +16,16 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 
 import info.nightscout.androidaps.Config;
-import info.nightscout.androidaps.Constants;
 import info.nightscout.androidaps.MainApp;
 import info.nightscout.androidaps.data.GlucoseStatus;
 import info.nightscout.androidaps.data.MealData;
+import info.nightscout.androidaps.db.TempBasal;
 import info.nightscout.androidaps.interfaces.PumpInterface;
-import info.nightscout.androidaps.plugins.ConfigBuilder.ConfigBuilderFragment;
-import info.nightscout.androidaps.plugins.ConfigBuilder.ConfigBuilderPlugin;
 import info.nightscout.androidaps.plugins.Loop.ScriptReader;
 import info.nightscout.androidaps.data.IobTotal;
-import info.nightscout.client.data.NSProfile;
+import info.nightscout.androidaps.plugins.NSClientInternal.data.NSProfile;
+import info.nightscout.utils.SP;
+import info.nightscout.utils.SafeParse;
 
 public class DetermineBasalAdapterAMAJS {
     private static Logger log = LoggerFactory.getLogger(DetermineBasalAdapterAMAJS.class);
@@ -139,8 +139,7 @@ public class DetermineBasalAdapterAMAJS {
     }
 
     private void loadScript() throws IOException {
-        mV8rt.executeVoidScript(readFile("OpenAPSAMA/round-basal.js"), "OpenAPSAMA/round-basal.js", 0);
-        mV8rt.executeVoidScript("var round_basal = module.exports;");
+        mV8rt.executeVoidScript("var round_basal = function round_basal(basal, profile) { return basal; };");
         mV8rt.executeVoidScript("require = function() {return round_basal;};");
 
         mV8rt.executeVoidScript(readFile("OpenAPSAMA/basal-set-temp.js"), "OpenAPSAMA/basal-set-temp.js ", 0);
@@ -151,15 +150,6 @@ public class DetermineBasalAdapterAMAJS {
                 "OpenAPSAMA/determine-basal.js",
                 0);
         mV8rt.executeVoidScript("var determine_basal = module.exports;");
-        mV8rt.executeVoidScript(
-                "var setTempBasal = function (rate, duration, profile, rT, offline) {" +
-                        "rT.duration = duration;\n" +
-                        "    rT.rate = rate;" +
-                        "return rT;" +
-                        "};",
-                "setTempBasal.js",
-                0
-        );
     }
 
     private void initModuleParent() {
@@ -217,12 +207,9 @@ public class DetermineBasalAdapterAMAJS {
                         double min_5m_carbimpact) {
 
         String units = profile.getUnits();
-        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(MainApp.instance().getApplicationContext());
-        boolean autosensAdustTargets = preferences.getBoolean("openapsama_autosens_adjusttargets", false);
 
         mProfile = new V8Object(mV8rt);
         mProfile.add("max_iob", maxIob);
-        mProfile.add("carbs_hr", profile.getCarbAbsorbtionRate());
         mProfile.add("dia", profile.getDia());
         mProfile.add("type", "current");
         mProfile.add("max_daily_basal", profile.getMaxDailyBasal());
@@ -232,19 +219,26 @@ public class DetermineBasalAdapterAMAJS {
         mProfile.add("target_bg", targetBg);
         mProfile.add("carb_ratio", profile.getIc(profile.secondsFromMidnight()));
         mProfile.add("sens", NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()).doubleValue(), units));
-        mProfile.add("max_daily_safety_multiplier", Constants.MAX_DAILY_SAFETY_MULTIPLIER);
-        mProfile.add("current_basal_safety_multiplier", Constants.CURRENT_BASAL_SAFETY_MULTIPLIER);
+        mProfile.add("max_daily_safety_multiplier", SP.getInt("openapsama_max_daily_safety_multiplier", 3));
+        mProfile.add("current_basal_safety_multiplier", SP.getInt("openapsama_current_basal_safety_multiplier", 4));
         mProfile.add("skip_neutral_temps", true);
         mProfile.add("current_basal", pump.getBaseBasalRate());
         mProfile.add("temptargetSet", tempTargetSet);
-        mProfile.add("autosens_adjust_targets", autosensAdustTargets);
-        mProfile.add("min_5m_carbimpact", min_5m_carbimpact);
+        mProfile.add("autosens_adjust_targets", SP.getBoolean("openapsama_autosens_adjusttargets", true));
+        mProfile.add("min_5m_carbimpact", SP.getDouble("openapsama_min_5m_carbimpact", 3d));
         mV8rt.add(PARAM_profile, mProfile);
 
         mCurrentTemp = new V8Object(mV8rt);
         mCurrentTemp.add("temp", "absolute");
         mCurrentTemp.add("duration", pump.getTempBasalRemainingMinutes());
         mCurrentTemp.add("rate", pump.getTempBasalAbsoluteRate());
+
+        // as we have non default temps longer than 30 mintues
+        TempBasal tempBasal = pump.getTempBasal();
+        if(tempBasal != null){
+            mCurrentTemp.add("minutesrunning", tempBasal.getRealDuration());
+        }
+
         mV8rt.add(PARAM_currentTemp, mCurrentTemp);
 
         mIobData = mV8rt.executeArrayScript(IobTotal.convertToJSONArray(iobArray).toString());

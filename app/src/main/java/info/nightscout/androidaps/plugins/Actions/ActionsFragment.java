@@ -94,19 +94,19 @@ public class ActionsFragment extends Fragment implements FragmentBase, View.OnCl
             activity.runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    if (!MainApp.getConfigBuilder().getPumpDescription().isSetBasalProfileCapable || !MainApp.getConfigBuilder().isInitialized())
+                    if (!MainApp.getConfigBuilder().getPumpDescription().isSetBasalProfileCapable || !MainApp.getConfigBuilder().isInitialized() || MainApp.getConfigBuilder().isSuspended())
                         profileSwitch.setVisibility(View.GONE);
                     else
                         profileSwitch.setVisibility(View.VISIBLE);
-                    if (!MainApp.getConfigBuilder().getPumpDescription().isExtendedBolusCapable || !MainApp.getConfigBuilder().isInitialized())
+                    if (!MainApp.getConfigBuilder().getPumpDescription().isExtendedBolusCapable || !MainApp.getConfigBuilder().isInitialized() || MainApp.getConfigBuilder().isSuspended())
                         extendedBolus.setVisibility(View.GONE);
                     else
                         extendedBolus.setVisibility(View.VISIBLE);
-                    if (!MainApp.getConfigBuilder().getPumpDescription().isTempBasalCapable || !MainApp.getConfigBuilder().isInitialized())
+                    if (!MainApp.getConfigBuilder().getPumpDescription().isTempBasalCapable || !MainApp.getConfigBuilder().isInitialized() || MainApp.getConfigBuilder().isSuspended())
                         tempBasal.setVisibility(View.GONE);
                     else
                         tempBasal.setVisibility(View.VISIBLE);
-                    if (!MainApp.getConfigBuilder().getPumpDescription().isRefillingCapable || !MainApp.getConfigBuilder().isInitialized())
+                    if (!MainApp.getConfigBuilder().getPumpDescription().isRefillingCapable || !MainApp.getConfigBuilder().isInitialized() || MainApp.getConfigBuilder().isSuspended())
                         fill.setVisibility(View.GONE);
                     else
                         fill.setVisibility(View.VISIBLE);
@@ -132,7 +132,7 @@ public class ActionsFragment extends Fragment implements FragmentBase, View.OnCl
                 break;
             case R.id.actions_temptarget:
                 NewNSTreatmentDialog newTTDialog = new NewNSTreatmentDialog();
-                final OptionsToShow temptarget = new OptionsToShow(R.id.careportal_temptarget, R.string.careportal_temptarget, false, false, false, false, true, false, false, false, false, true);
+                final OptionsToShow temptarget = new OptionsToShow(R.id.careportal_temporarytarget, R.string.careportal_temporarytarget, false, false, false, false, true, false, false, false, false, true);
                 temptarget.executeTempTarget = true;
                 newTTDialog.setOptions(temptarget);
                 newTTDialog.show(manager, "NewNSTreatmentDialog");

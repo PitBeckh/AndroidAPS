@@ -1,5 +1,4 @@
 <resources>
-    <string name="app_name">AndroidAPS</string>
     <string name="treatmentssafety_title">Seguridad tratamientos</string>
     <string name="treatmentssafety_maxbolus_title">Máximo Bolo permitido [U]</string>
     <string name="treatmentssafety_maxcarbs_title">Máximos carbohidratos permitidos [g]</string>
@@ -209,7 +208,7 @@
     <string name="connecting">Conectando</string>
     <string name="connected">Conectado</string>
     <string name="disconnected">Desconectado</string>
-    <string name="syncprofiletopump_title">Sincronizar perfil NS a bomba</string>
+    <string name="syncprofiletopump_title">Sincronizar perfil a bomba</string>
     <string name="danar_pump_settings">Ajustes de la bomba DanaR</string>
     <string name="nightscout">Nightscout</string>
     <string name="end_user_license_agreement">Acuerdo de licencia de usuario final</string>
@@ -250,7 +249,6 @@
     <string name="careportal_temporarytargetcancel">Cancelar Objetivo temporal</string>
     <string name="danarprofile">Configuración perfil DanaR</string>
     <string name="danarprofile_dia">DIA [h]</string>
-    <string name="danarprofile_car">Tasa de absorción de carbohidratos</string>
     <string name="failedupdatebasalprofile">No se pudo actualizar el perfil basal</string>
     <string name="danar_history">Historial</string>
     <string name="danar_historyreload">Recargar</string>
@@ -276,7 +274,7 @@
     <string name="danar_history_refill">Rellenar</string>
     <string name="danar_history_syspend">Suspender</string>
     <string formatted="false" name="danar_history_connectingfor">Conexión de %d s</string>
-    <string name="danar_password">Contraseña de la bomba</string>
+    <string name="danar_password_title">Contraseña de la bomba</string>
     <string name="wrongpumppassword">Contraseña de la bomba incorrecta!</string>
     <string name="pumpbusy">Bomba ocupada</string>
     <string name="overview_bolusprogress_delivered">Entregado</string>
@@ -284,7 +282,7 @@
     <string name="occlusion">Oclusión</string>
     <string name="overview_bolusprogress_stop">Detener</string>
     <string name="overview_bolusprogress_stoppressed">Parar pulsado</string>
-    <string name="waitingforpump">Esperando bomba</string>
+    <string name="waitingforpumpclicktorefresh">Esperando bomba. Click to refresh.</string>
     <string formatted="false" name="overview_bolusprogress_goingtodeliver">Va a entregar% .2fU</string>
     <string name="objectives_0_objective">Configuración de visualización y monitoreo, y el análisis de los basales y ratios</string>
     <string name="objectives_0_gate">Comprobar que los datos de BG están disponibles en Nightscout, y que los datos de la bomba de insulina se están subiendo</string>
@@ -367,7 +365,6 @@
     <string name="button1">Botón 1</string>
     <string name="button2">Botón 2</string>
     <string name="button3">Botón 3</string>
-    <string name="careportal_temptarget">Objetivo Temporal</string>
     <string name="danar_disableeasymode">Inhabilitar EasyUI modo en bomba</string>
     <string name="danar_enableextendedbolus">Habilitar bolos extendidos en bomba</string>
     <string name="danar_switchtouhmode">Cambio de modo de U/d a U/h en bomba</string>
@@ -403,6 +400,9 @@
     <string name="temptargetrange_refreshfromnightscout">Actualizar objetivo temporal desde NS</string>
     <string name="timeshift_hint"></string>
     <string name="units">Unidades:</string>
-    <string name="openapsama_autosens_adjusttargets">Reajuste objetivos por autosens</string>
-
+    <string name="error_only_numeric_digits_allowed">Sólo se permiten caracteres numéricos</string>
+    <string name="error_only_numeric_digits_range_allowed">Sólo se permiten dígitos en el rango %1$s - %2$s</string>
+    <string name="error_field_must_not_be_empty">Este campo no puede estar vacío</string>
+    <string name="error_phone_not_valid">Número de teléfono inválido</string>
+    <string name="waitingforpump">Esperando bomba</string>
 </resources>

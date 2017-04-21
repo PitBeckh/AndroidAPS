@@ -24,11 +24,10 @@ import java.util.Date;
 
 import info.nightscout.androidaps.MainApp;
 import info.nightscout.androidaps.R;
-import info.nightscout.androidaps.events.EventPreferenceChange;
+import info.nightscout.androidaps.events.EventPumpStatusChanged;
 import info.nightscout.androidaps.events.EventTempBasalChange;
 import info.nightscout.androidaps.interfaces.FragmentBase;
 import info.nightscout.androidaps.plugins.DanaR.Dialogs.ProfileViewDialog;
-import info.nightscout.androidaps.plugins.DanaR.events.EventDanaRConnectionStatus;
 import info.nightscout.androidaps.plugins.DanaR.events.EventDanaRNewStatus;
 import info.nightscout.androidaps.plugins.DanaRKorean.History.DanaRHistoryActivity;
 import info.nightscout.androidaps.plugins.DanaRKorean.History.DanaRStatsActivity;
@@ -61,6 +60,7 @@ public class DanaRKoreanFragment extends Fragment implements FragmentBase {
     TextView batteryView;
     TextView reservoirView;
     TextView iobView;
+    TextView firmwareView;
     Button viewProfileButton;
     Button historyButton;
     Button statsButton;
@@ -103,6 +103,7 @@ public class DanaRKoreanFragment extends Fragment implements FragmentBase {
         batteryView = (TextView) view.findViewById(R.id.danar_battery);
         reservoirView = (TextView) view.findViewById(R.id.danar_reservoir);
         iobView = (TextView) view.findViewById(R.id.danar_iob);
+        firmwareView = (TextView) view.findViewById(R.id.danar_firmware);
         viewProfileButton = (Button) view.findViewById(R.id.danar_viewprofile);
         historyButton = (Button) view.findViewById(R.id.danar_history);
         statsButton = (Button) view.findViewById(R.id.danar_stats);
@@ -161,18 +162,18 @@ public class DanaRKoreanFragment extends Fragment implements FragmentBase {
     }
 
     @Subscribe
-    public void onStatusEvent(final EventDanaRConnectionStatus c) {
+    public void onStatusEvent(final EventPumpStatusChanged c) {
         Activity activity = getActivity();
         if (activity != null) {
             activity.runOnUiThread(
                     new Runnable() {
                         @Override
                         public void run() {
-                            if (c.sStatus == EventDanaRConnectionStatus.CONNECTING)
+                            if (c.sStatus == EventPumpStatusChanged.CONNECTING)
                                 btConnectionView.setText("{fa-bluetooth-b spin} " + c.sSecondsElapsed + "s");
-                            else if (c.sStatus == EventDanaRConnectionStatus.CONNECTED)
+                            else if (c.sStatus == EventPumpStatusChanged.CONNECTED)
                                 btConnectionView.setText("{fa-bluetooth}");
-                            else
+                            else if (c.sStatus == EventPumpStatusChanged.DISCONNECTED)
                                 btConnectionView.setText("{fa-bluetooth-b}");
                         }
                     }
@@ -190,11 +191,6 @@ public class DanaRKoreanFragment extends Fragment implements FragmentBase {
         updateGUI();
     }
 
-    @Subscribe
-    public void onStatusEvent(final EventPreferenceChange s) {
-        updateGUI();
-    }
-
     // GUI functions
     private void updateGUI() {
 
@@ -204,24 +200,24 @@ public class DanaRKoreanFragment extends Fragment implements FragmentBase {
                 @SuppressLint("SetTextI18n")
                 @Override
                 public void run() {
-
-                    if (DanaRKoreanPlugin.getDanaRPump().lastConnection.getTime() != 0) {
-                        Long agoMsec = new Date().getTime() - DanaRKoreanPlugin.getDanaRPump().lastConnection.getTime();
+                    DanaRKoreanPump pump = DanaRKoreanPlugin.getDanaRPump();
+                    if (pump.lastConnection.getTime() != 0) {
+                        Long agoMsec = new Date().getTime() - pump.lastConnection.getTime();
                         int agoMin = (int) (agoMsec / 60d / 1000d);
-                        lastConnectionView.setText(DateUtil.timeString(DanaRKoreanPlugin.getDanaRPump().lastConnection) + " (" + String.format(MainApp.sResources.getString(R.string.minago), agoMin) + ")");
+                        lastConnectionView.setText(DateUtil.timeString(pump.lastConnection) + " (" + String.format(MainApp.sResources.getString(R.string.minago), agoMin) + ")");
                         SetWarnColor.setColor(lastConnectionView, agoMin, 16d, 31d);
                     }
-//                    if (DanaRKoreanPlugin.getDanaRPump().lastBolusTime.getTime() != 0) {
-//                        Long agoMsec = new Date().getTime() - DanaRKoreanPlugin.getDanaRPump().lastBolusTime.getTime();
+//                    if (pump.lastBolusTime.getTime() != 0) {
+//                        Long agoMsec = new Date().getTime() - pump.lastBolusTime.getTime();
 //                        double agoHours =  agoMsec / 60d / 60d / 1000d;
 //                        if (agoHours < 6) // max 6h back
-//                            lastBolusView.setText(formatTime.format(DanaRKoreanPlugin.getDanaRPump().lastBolusTime) + " (" + DecimalFormatter.to1Decimal(agoHours) + " " + getString(R.string.hoursago) + ") " + DecimalFormatter.to2Decimal(danaRKoreanPlugin.getDanaRPump().lastBolusAmount) + " U");
+//                            lastBolusView.setText(formatTime.format(pump.lastBolusTime) + " (" + DecimalFormatter.to1Decimal(agoHours) + " " + getString(R.string.hoursago) + ") " + DecimalFormatter.to2Decimal(pump.lastBolusAmount) + " U");
 //                        else lastBolusView.setText("");
 //                    }
 
-                    dailyUnitsView.setText(DecimalFormatter.to0Decimal(DanaRKoreanPlugin.getDanaRPump().dailyTotalUnits) + " / " + DanaRKoreanPlugin.getDanaRPump().maxDailyTotalUnits + " U");
-                    SetWarnColor.setColor(dailyUnitsView, DanaRKoreanPlugin.getDanaRPump().dailyTotalUnits, DanaRKoreanPlugin.getDanaRPump().maxDailyTotalUnits * 0.75d, DanaRKoreanPlugin.getDanaRPump().maxDailyTotalUnits * 0.9d);
-                    basaBasalRateView.setText("( " + (DanaRKoreanPlugin.getDanaRPump().activeProfile + 1) + " )  " + DecimalFormatter.to2Decimal(danaRKoreanPlugin.getBaseBasalRate()) + " U/h");
+                    dailyUnitsView.setText(DecimalFormatter.to0Decimal(pump.dailyTotalUnits) + " / " + pump.maxDailyTotalUnits + " U");
+                    SetWarnColor.setColor(dailyUnitsView, pump.dailyTotalUnits, pump.maxDailyTotalUnits * 0.75d, pump.maxDailyTotalUnits * 0.9d);
+                    basaBasalRateView.setText("( " + (pump.activeProfile + 1) + " )  " + DecimalFormatter.to2Decimal(danaRKoreanPlugin.getBaseBasalRate()) + " U/h");
                     if (danaRKoreanPlugin.isRealTempBasalInProgress()) {
                         tempBasalView.setText(danaRKoreanPlugin.getRealTempBasal().toString());
                     } else {
@@ -232,11 +228,16 @@ public class DanaRKoreanFragment extends Fragment implements FragmentBase {
                     } else {
                         extendedBolusView.setText("");
                     }
-                    reservoirView.setText(DecimalFormatter.to0Decimal(DanaRKoreanPlugin.getDanaRPump().reservoirRemainingUnits) + " / 300 U");
-                    SetWarnColor.setColorInverse(reservoirView, DanaRKoreanPlugin.getDanaRPump().reservoirRemainingUnits, 50d, 20d);
-                    batteryView.setText("{fa-battery-" + (DanaRKoreanPlugin.getDanaRPump().batteryRemaining / 25) + "}");
-                    SetWarnColor.setColorInverse(batteryView, DanaRKoreanPlugin.getDanaRPump().batteryRemaining, 51d, 26d);
-                    iobView.setText(DanaRKoreanPlugin.getDanaRPump().iob + " U");
+                    reservoirView.setText(DecimalFormatter.to0Decimal(pump.reservoirRemainingUnits) + " / 300 U");
+                    SetWarnColor.setColorInverse(reservoirView, pump.reservoirRemainingUnits, 50d, 20d);
+                    batteryView.setText("{fa-battery-" + (pump.batteryRemaining / 25) + "}");
+                    SetWarnColor.setColorInverse(batteryView, pump.batteryRemaining, 51d, 26d);
+                    iobView.setText(pump.iob + " U");
+                    if (pump.isNewPump) {
+                        firmwareView.setText(String.format(MainApp.sResources.getString(R.string.danar_model), pump.model, pump.protocol, pump.productCode));
+                    } else {
+                        firmwareView.setText("OLD");
+                    }
                 }
             });
 

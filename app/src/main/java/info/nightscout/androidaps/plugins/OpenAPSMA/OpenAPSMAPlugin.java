@@ -1,8 +1,5 @@
 package info.nightscout.androidaps.plugins.OpenAPSMA;
 
-import android.content.SharedPreferences;
-import android.preference.PreferenceManager;
-
 import org.json.JSONException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,14 +22,15 @@ import info.nightscout.androidaps.interfaces.TempBasalsInterface;
 import info.nightscout.androidaps.interfaces.TreatmentsInterface;
 import info.nightscout.androidaps.plugins.Loop.APSResult;
 import info.nightscout.androidaps.plugins.Loop.ScriptReader;
+import info.nightscout.androidaps.plugins.NSClientInternal.data.NSProfile;
 import info.nightscout.androidaps.plugins.OpenAPSMA.events.EventOpenAPSUpdateGui;
 import info.nightscout.androidaps.plugins.OpenAPSMA.events.EventOpenAPSUpdateResultGui;
 import info.nightscout.androidaps.plugins.TempTargetRange.TempTargetRangePlugin;
-import info.nightscout.client.data.NSProfile;
 import info.nightscout.utils.DateUtil;
+import info.nightscout.utils.Profiler;
 import info.nightscout.utils.Round;
+import info.nightscout.utils.SP;
 import info.nightscout.utils.SafeParse;
-import info.nightscout.utils.ToastUtils;
 
 import static info.nightscout.androidaps.plugins.OpenAPSAMA.OpenAPSAMAPlugin.checkOnlyHardLimits;
 import static info.nightscout.androidaps.plugins.OpenAPSAMA.OpenAPSAMAPlugin.verifyHardLimits;
@@ -156,12 +154,11 @@ public class OpenAPSMAPlugin implements PluginBase, APSInterface {
             return;
         }
 
-        SharedPreferences SP = PreferenceManager.getDefaultSharedPreferences(MainApp.instance().getApplicationContext());
         String units = profile.getUnits();
 
-        String maxBgDefault = Constants.MAX_BG_DEFAULT_MGDL;
-        String minBgDefault = Constants.MIN_BG_DEFAULT_MGDL;
-        String targetBgDefault = Constants.TARGET_BG_DEFAULT_MGDL;
+        Double maxBgDefault = Constants.MAX_BG_DEFAULT_MGDL;
+        Double minBgDefault = Constants.MIN_BG_DEFAULT_MGDL;
+        Double targetBgDefault = Constants.TARGET_BG_DEFAULT_MGDL;
         if (!units.equals(Constants.MGDL)) {
             maxBgDefault = Constants.MAX_BG_DEFAULT_MMOL;
             minBgDefault = Constants.MIN_BG_DEFAULT_MMOL;
@@ -170,15 +167,16 @@ public class OpenAPSMAPlugin implements PluginBase, APSInterface {
 
         Date now = new Date();
 
-        double maxIob = SafeParse.stringToDouble(SP.getString("openapsma_max_iob", "1.5"));
+        double maxIob = SP.getDouble("openapsma_max_iob", 1.5d);
         double maxBasal = SafeParse.stringToDouble(SP.getString("openapsma_max_basal", "1"));
-        double minBg = NSProfile.toMgdl(SafeParse.stringToDouble(SP.getString("openapsma_min_bg", minBgDefault)), units);
-        double maxBg = NSProfile.toMgdl(SafeParse.stringToDouble(SP.getString("openapsma_max_bg", maxBgDefault)), units);
-        double targetBg = NSProfile.toMgdl(SafeParse.stringToDouble(SP.getString("openapsma_target_bg", targetBgDefault)), units);
+        double minBg = NSProfile.toMgdl(SP.getDouble("openapsma_min_bg", minBgDefault), units);
+        double maxBg = NSProfile.toMgdl(SP.getDouble("openapsma_max_bg", maxBgDefault), units);
+        double targetBg = NSProfile.toMgdl(SP.getDouble("openapsma_target_bg", targetBgDefault), units);
 
         minBg = Round.roundTo(minBg, 0.1d);
         maxBg = Round.roundTo(maxBg, 0.1d);
 
+        Date start = new Date();
         TreatmentsInterface treatments = MainApp.getConfigBuilder().getActiveTreatments();
         TempBasalsInterface tempBasals = MainApp.getConfigBuilder().getActiveTempBasals();
         treatments.updateTotalIOB();
@@ -191,6 +189,7 @@ public class OpenAPSMAPlugin implements PluginBase, APSInterface {
         MealData mealData = treatments.getMealData();
 
         maxIob = MainApp.getConfigBuilder().applyMaxIOBConstraints(maxIob);
+        Profiler.log(log, "MA data gathering", start);
 
         minBg = verifyHardLimits(minBg, "minBg", Constants.VERY_HARD_LIMIT_MIN_BG[0], Constants.VERY_HARD_LIMIT_MIN_BG[1]);
         maxBg = verifyHardLimits(maxBg, "maxBg", Constants.VERY_HARD_LIMIT_MAX_BG[0], Constants.VERY_HARD_LIMIT_MAX_BG[1]);
@@ -209,14 +208,15 @@ public class OpenAPSMAPlugin implements PluginBase, APSInterface {
         maxIob = verifyHardLimits(maxIob, "maxIob", 0, 7);
         maxBasal = verifyHardLimits(maxBasal, "max_basal", 0.1, 10);
 
-        if (!checkOnlyHardLimits(profile.getCarbAbsorbtionRate(), "carbs_hr", 4, 100)) return;
         if (!checkOnlyHardLimits(profile.getDia(), "dia", 2, 7)) return;
         if (!checkOnlyHardLimits(profile.getIc(profile.secondsFromMidnight()), "carbratio", 2, 100)) return;
         if (!checkOnlyHardLimits(NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()).doubleValue(), units), "sens", 2, 900)) return;
         if (!checkOnlyHardLimits(profile.getMaxDailyBasal(), "max_daily_basal", 0.1, 10)) return;
         if (!checkOnlyHardLimits(pump.getBaseBasalRate(), "current_basal", 0.01, 5)) return;
 
+        start = new Date();
         determineBasalAdapterMAJS.setData(profile, maxIob, maxBasal, minBg, maxBg, targetBg, pump, iobTotal, glucoseStatus, mealData);
+        Profiler.log(log, "MA calculation", start);
 
 
         DetermineBasalResultMA determineBasalResultMA = determineBasalAdapterMAJS.invoke();

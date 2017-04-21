@@ -8,19 +8,19 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 
-import info.nightscout.androidaps.Constants;
 import info.nightscout.androidaps.MainApp;
 import info.nightscout.androidaps.data.IobTotal;
 import info.nightscout.androidaps.db.BgReading;
-import info.nightscout.client.data.NSProfile;
+import info.nightscout.androidaps.plugins.NSClientInternal.data.NSProfile;
 import info.nightscout.utils.Round;
+import info.nightscout.utils.SP;
+import info.nightscout.utils.SafeParse;
 
 
 public class Autosens {
     private static Logger log = LoggerFactory.getLogger(Autosens.class);
 
-    public static AutosensResult detectSensitivityandCarbAbsorption(List<BgReading> glucose_data, long mealTime) {
-
+    public static AutosensResult detectSensitivityandCarbAbsorption(List<BgReading> glucose_data, Long mealTime) {
         NSProfile profile = MainApp.getConfigBuilder().getActiveProfile().getProfile();
 
         //console.error(mealTime);
@@ -34,6 +34,7 @@ public class Autosens {
         for (int i = 1; i < glucose_data.size(); ++i) {
             long bgTime = glucose_data.get(i).getTimeIndex();
             long lastbgTime = glucose_data.get(i - 1).getTimeIndex();
+            //log.error("Processing " + i + ": " + new Date(bgTime).toString() + " " + glucose_data.get(i).value + "   Previous: " + new Date(lastbgTime).toString() + " " + glucose_data.get(i - 1).value);
             if (glucose_data.get(i).value < 39 || glucose_data.get(i - 1).value < 39) {
                 continue;
             }
@@ -46,29 +47,38 @@ public class Autosens {
                 //console.error(elapsed_minutes);
                 long nextbgTime;
                 while (elapsed_minutes > 5) {
-                    nextbgTime = lastbgTime + 5 * 60 * 1000;
+                    nextbgTime = lastbgTime - 5 * 60 * 1000;
                     j++;
                     BgReading newBgreading = new BgReading();
                     newBgreading.timeIndex = nextbgTime;
                     double gapDelta = glucose_data.get(i).value - lastbg;
                     //console.error(gapDelta, lastbg, elapsed_minutes);
-                    double nextbg = lastbg + (5 / elapsed_minutes * gapDelta);
+                    double nextbg = lastbg + (5d / elapsed_minutes * gapDelta);
                     newBgreading.value = Math.round(nextbg);
                     //console.error("Interpolated", bucketed_data[j]);
                     bucketed_data.add(newBgreading);
+                    //log.error("******************************************************************************************************* Adding:" + new Date(newBgreading.timeIndex).toString() + " " + newBgreading.value);
 
                     elapsed_minutes = elapsed_minutes - 5;
                     lastbg = nextbg;
                     lastbgTime = nextbgTime;
                 }
+                j++;
+                BgReading newBgreading = new BgReading();
+                newBgreading.value = glucose_data.get(i).value;
+                newBgreading.timeIndex = bgTime;
+                bucketed_data.add(newBgreading);
+                //log.error("******************************************************************************************************* Copying:" + new Date(newBgreading.timeIndex).toString() + " " + newBgreading.value);
             } else if (Math.abs(elapsed_minutes) > 2) {
                 j++;
                 BgReading newBgreading = new BgReading();
                 newBgreading.value = glucose_data.get(i).value;
                 newBgreading.timeIndex = bgTime;
                 bucketed_data.add(newBgreading);
+                //log.error("******************************************************************************************************* Copying:" + new Date(newBgreading.timeIndex).toString() + " " + newBgreading.value);
             } else {
                 bucketed_data.get(j).value = (bucketed_data.get(j).value + glucose_data.get(i).value) / 2;
+                //log.error("***** Average");
             }
         }
         //console.error(bucketed_data);
@@ -80,6 +90,12 @@ public class Autosens {
         for (int i = 0; i < bucketed_data.size() - 3; ++i) {
             long bgTime = bucketed_data.get(i).timeIndex;
             int secondsFromMidnight = NSProfile.secondsFromMidnight(new Date(bgTime));
+
+            String hour = "";
+            //log.debug(new Date(bgTime).toString());
+            if (secondsFromMidnight % 3600 < 2.5 * 60 || secondsFromMidnight % 3600 > 57.5 * 60) {
+                hour += "(" + Math.round(secondsFromMidnight / 3600d) + ")";
+            }
 
             double sens = NSProfile.toMgdl(profile.getIsf(secondsFromMidnight), profile.getUnits());
 
@@ -98,7 +114,7 @@ public class Autosens {
 //            avgDelta = avgDelta.toFixed(2);
             IobTotal iob = IobTotal.calulateFromTreatmentsAndTemps(bgTime);
 
-            double bgi = Math.round((-iob.activity * sens * 5) * 100) / 100;
+            double bgi = Math.round((-iob.activity * sens * 5) * 100) / 100d;
 //            bgi = bgi.toFixed(2);
             //console.error(delta);
             double deviation = delta - bgi;
@@ -122,72 +138,78 @@ public class Autosens {
                 pastSensitivity += ">";
                 //console.error(bgTime);
             }
+            pastSensitivity += hour;
             //log.debug("TIME: " + new Date(bgTime).toString() + " BG: " + bg + " SENS: " + sens + " DELTA: " + delta + " AVGDELTA: " + avgDelta + " IOB: " + iob.iob + " ACTIVITY: " + iob.activity + " BGI: " + bgi + " DEVIATION: " + deviation);
 
             // if bgTime is more recent than mealTime
-            if (bgTime > mealTime) {
+            if (mealTime != null && bgTime > mealTime) {
                 // figure out how many carbs that represents
                 // but always assume at least 3mg/dL/5m (default) absorption
-                double ci = Math.max(deviation, Constants.MIN_5M_CARBIMPACT);
+                double ci = Math.max(deviation, SP.getDouble("openapsama_min_5m_carbimpact", 3.0));
                 double absorbed = ci * profile.getIc(secondsFromMidnight) / sens;
                 // and add that to the running total carbsAbsorbed
                 carbsAbsorbed += absorbed;
             }
         }
-        //console.error("");
-        log.debug(pastSensitivity);
-        //console.log(JSON.stringify(avgDeltas));
-        //console.log(JSON.stringify(bgis));
-        Arrays.sort(avgDeltas);
-        Arrays.sort(bgis);
-        Arrays.sort(deviations);
 
-        for (double i = 0.9; i > 0.1; i = i - 0.02) {
-            //console.error("p="+i.toFixed(2)+": "+percentile(avgDeltas, i).toFixed(2)+", "+percentile(bgis, i).toFixed(2)+", "+percentile(deviations, i).toFixed(2));
-            if (percentile(deviations, (i + 0.02)) >= 0 && percentile(deviations, i) < 0) {
+        double ratio = 1;
+        String ratioLimit = "";
+        String sensResult = "";
+
+        if (mealTime == null) {
+            //console.error("");
+            log.debug(pastSensitivity);
+            //console.log(JSON.stringify(avgDeltas));
+            //console.log(JSON.stringify(bgis));
+            Arrays.sort(avgDeltas);
+            Arrays.sort(bgis);
+            Arrays.sort(deviations);
+
+            for (double i = 0.9; i > 0.1; i = i - 0.02) {
                 //console.error("p="+i.toFixed(2)+": "+percentile(avgDeltas, i).toFixed(2)+", "+percentile(bgis, i).toFixed(2)+", "+percentile(deviations, i).toFixed(2));
-                log.debug(Math.round(100 * i) + "% of non-meal deviations negative (target 45%-50%)");
+                if (percentile(deviations, (i + 0.02)) >= 0 && percentile(deviations, i) < 0) {
+                    //console.error("p="+i.toFixed(2)+": "+percentile(avgDeltas, i).toFixed(2)+", "+percentile(bgis, i).toFixed(2)+", "+percentile(deviations, i).toFixed(2));
+                    log.debug(Math.round(100 * i) + "% of non-meal deviations negative (target 45%-50%)");
+                }
             }
-        }
-        double pSensitive = percentile(deviations, 0.50);
-        double pResistant = percentile(deviations, 0.45);
-        //p30 = percentile(deviations, 0.3);
+            double pSensitive = percentile(deviations, 0.50);
+            double pResistant = percentile(deviations, 0.45);
+            //p30 = percentile(deviations, 0.3);
 
 //        average = deviationSum / deviations.length;
 
-        //console.error("Mean deviation: "+average.toFixed(2));
-        double basalOff = 0;
+            //console.error("Mean deviation: "+average.toFixed(2));
+            double basalOff = 0;
 
-        String sensResult = "";
-        if (pSensitive < 0) { // sensitive
-            basalOff = pSensitive * (60 / 5) / NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits());
-            sensResult = "Excess insulin sensitivity detected";
-        } else if (pResistant > 0) { // resistant
-            basalOff = pResistant * (60 / 5) / NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits());
-            sensResult = "Excess insulin resistance detected";
-        } else {
-            sensResult = "Sensitivity normal";
-        }
-        log.debug(sensResult);
-        double ratio = 1 + (basalOff / profile.getMaxDailyBasal());
+            if (pSensitive < 0) { // sensitive
+                basalOff = pSensitive * (60 / 5) / NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits());
+                sensResult = "Excess insulin sensitivity detected";
+            } else if (pResistant > 0) { // resistant
+                basalOff = pResistant * (60 / 5) / NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits());
+                sensResult = "Excess insulin resistance detected";
+            } else {
+                sensResult = "Sensitivity normal";
+            }
+            log.debug(sensResult);
+            ratio = 1 + (basalOff / profile.getMaxDailyBasal());
 
         // don't adjust more than 1.5x
         double rawRatio = ratio;
-        ratio = Math.max(ratio, Constants.AUTOSENS_MIN);
-        ratio = Math.min(ratio, Constants.AUTOSENS_MAX);
+        ratio = Math.max(ratio, SafeParse.stringToDouble(SP.getString("openapsama_autosens_min", "0.7")));
+        ratio = Math.min(ratio, SafeParse.stringToDouble(SP.getString("openapsama_autosens_max", "1.2")));
 
-        String ratioLimit = "";
-        if (ratio != rawRatio) {
-            ratioLimit = "Ratio limited from " + rawRatio + " to " + ratio;
-            log.debug(ratioLimit);
-        }
+            if (ratio != rawRatio) {
+                ratioLimit = "Ratio limited from " + rawRatio + " to " + ratio;
+                log.debug(ratioLimit);
+            }
 
-        double newisf = Math.round(NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits()) / ratio);
-        if (ratio != 1) {
-            log.debug("ISF adjusted from " + NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits()) + " to " + newisf);
+            double newisf = Math.round(NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits()) / ratio);
+            if (ratio != 1) {
+                log.debug("ISF adjusted from " + NSProfile.toMgdl(profile.getIsf(NSProfile.secondsFromMidnight()), profile.getUnits()) + " to " + newisf);
+            }
+            //console.error("Basal adjustment "+basalOff.toFixed(2)+"U/hr");
+            //console.error("Ratio: "+ratio*100+"%: new ISF: "+newisf.toFixed(1)+"mg/dL/U");
         }
-        //console.error("Basal adjustment "+basalOff.toFixed(2)+"U/hr");
-        //console.error("Ratio: "+ratio*100+"%: new ISF: "+newisf.toFixed(1)+"mg/dL/U");
 
         AutosensResult output = new AutosensResult();
         output.ratio = Round.roundTo(ratio, 0.01);

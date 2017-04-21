@@ -11,6 +11,8 @@ import android.support.v7.app.NotificationCompat;
 
 import com.squareup.otto.Subscribe;
 
+import java.util.Date;
+
 import info.nightscout.androidaps.Constants;
 import info.nightscout.androidaps.MainActivity;
 import info.nightscout.androidaps.MainApp;
@@ -28,7 +30,8 @@ import info.nightscout.androidaps.events.EventTreatmentChange;
 import info.nightscout.androidaps.interfaces.PluginBase;
 import info.nightscout.androidaps.interfaces.PumpInterface;
 import info.nightscout.androidaps.data.IobTotal;
-import info.nightscout.client.data.NSProfile;
+import info.nightscout.androidaps.plugins.ConfigBuilder.ConfigBuilderPlugin;
+import info.nightscout.androidaps.plugins.NSClientInternal.data.NSProfile;
 import info.nightscout.utils.DecimalFormatter;
 
 /**
@@ -38,7 +41,7 @@ import info.nightscout.utils.DecimalFormatter;
 public class PersistentNotificationPlugin implements PluginBase{
 
     private static final int ONGOING_NOTIFICATION_ID = 4711;
-    static boolean fragmentEnabled = false;
+    static boolean fragmentEnabled = true;
     private final Context ctx;
 
     public PersistentNotificationPlugin(Context ctx) {
@@ -104,22 +107,23 @@ public class PersistentNotificationPlugin implements PluginBase{
 
 
         String line1 = ctx.getString(R.string.noprofile);
+        if (MainApp.getConfigBuilder().getActiveProfile() == null) return;
         NSProfile profile = MainApp.getConfigBuilder().getActiveProfile().getProfile();
 
 
-        BgReading lastBG = MainApp.getDbHelper().lastBg();
+        BgReading lastBG = GlucoseStatus.lastBg();
         GlucoseStatus glucoseStatus = GlucoseStatus.getGlucoseStatusData();
 
         if(profile != null && lastBG != null) {
             line1 = lastBG.valueToUnitsToString(profile.getUnits());
-        }
-        if (glucoseStatus != null) {
-            line1 += "  Δ" + deltastring(glucoseStatus.delta, glucoseStatus.delta * Constants.MGDL_TO_MMOLL, profile.getUnits())
-            + " avgΔ" + deltastring(glucoseStatus.avgdelta, glucoseStatus.avgdelta * Constants.MGDL_TO_MMOLL, profile.getUnits());
-        } else {
-             line1 += " " +
-                     ctx.getString(R.string.old_data) +
-                     " ";
+            if (glucoseStatus != null) {
+                line1 += "  Δ" + deltastring(glucoseStatus.delta, glucoseStatus.delta * Constants.MGDL_TO_MMOLL, profile.getUnits())
+                        + " avgΔ" + deltastring(glucoseStatus.avgdelta, glucoseStatus.avgdelta * Constants.MGDL_TO_MMOLL, profile.getUnits());
+            } else {
+                line1 += " " +
+                        ctx.getString(R.string.old_data) +
+                        " ";
+            }
         }
 
         PumpInterface pump = MainApp.getConfigBuilder();
@@ -130,10 +134,13 @@ public class PersistentNotificationPlugin implements PluginBase{
         }
 
         //IOB
-        MainApp.getConfigBuilder().getActiveTreatments().updateTotalIOB();
-        IobTotal bolusIob = MainApp.getConfigBuilder().getActiveTreatments().getLastCalculation().round();
-        MainApp.getConfigBuilder().getActiveTempBasals().updateTotalIOB();
-        IobTotal basalIob = MainApp.getConfigBuilder().getActiveTempBasals().getLastCalculation().round();
+        ConfigBuilderPlugin.getActiveTreatments().updateTotalIOB();
+        IobTotal bolusIob = ConfigBuilderPlugin.getActiveTreatments().getLastCalculation().round();
+        IobTotal basalIob = new IobTotal(new Date().getTime());
+        if (ConfigBuilderPlugin.getActiveTempBasals() != null) {
+            ConfigBuilderPlugin.getActiveTempBasals().updateTotalIOB();
+            basalIob = ConfigBuilderPlugin.getActiveTempBasals().getLastCalculation().round();
+        }
         String line2 = ctx.getString(R.string.treatments_iob_label_string) + " " + DecimalFormatter.to2Decimal(bolusIob.iob + basalIob.basaliob) + "U ("
                 + ctx.getString(R.string.bolus) + ": " + DecimalFormatter.to2Decimal(bolusIob.iob) + "U "
                 + ctx.getString(R.string.basal) + ": " + DecimalFormatter.to2Decimal(basalIob.basaliob) + "U)";
@@ -150,7 +157,7 @@ public class PersistentNotificationPlugin implements PluginBase{
         builder.setOngoing(true);
         builder.setCategory(NotificationCompat.CATEGORY_STATUS);
         builder.setSmallIcon(R.drawable.ic_notification);
-        Bitmap largeIcon = BitmapFactory.decodeResource(ctx.getResources(), R.mipmap.ic_launcher);
+        Bitmap largeIcon = BitmapFactory.decodeResource(ctx.getResources(), R.mipmap.blueowl);
         builder.setLargeIcon(largeIcon);
         builder.setContentTitle(line1);
         builder.setContentText(line2);
